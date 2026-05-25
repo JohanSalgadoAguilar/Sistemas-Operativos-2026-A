@@ -127,3 +127,132 @@ user nginx nginx;
 
 worker_processes auto;
 
+events {
+ worker_connections 1024;
+}
+
+http {
+ include mime.types;
+ default_type application/octet-stream;
+
+ sendfile on;
+ keepalive_timeout 65;
+
+ server {
+  listen 80;
+  server_name localhost;
+
+  root /srv/nginx/html;
+
+  index index.php index.html index.htm;
+
+  location / {
+   try_files $uri $uri/ =404;
+  }
+
+  # Integración con PHP-FPM vía Socket UNIX
+  location ~ \.php$ {
+   include fastcgi_params;
+   fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+   fastcgi_pass unix:/tmp/php84.sock;
+  }
+ }
+}
+```
+
+## 6. Automatización con Unidades de Servicio SystemD
+
+### 6.1. Servicio de Inicialización de Directorios (`/etc/systemd/system/nginx-init.service`)
+
+```ini
+[Unit]
+Description=Inixializacion de directorios NGINX
+Before=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash -c '\
+  mkdir -p /srv/nginx/var/cache/client_temp /srv/nginx/var/run && \
+  chown -R nginx:nginx /srv/nginx/var && \
+  chmod 755 /srv/nginx/var'
+RemainAfterExit=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 6.2. Servicio de NGINX (`/etc/systemd/system/nginx.service`)
+
+```ini
+[Unit]
+Description=NGINX Compilado por miguelon
+After=network.service nginx-init.service
+
+[Service]
+ExecStart=/srv/nginx/sbin/nginx -g "daemon off;"
+ExecReload=/srv/nginx/sbin/nginx -s reload
+ExecStop=/srv/nginx/sbin/nginx -s quit
+User=nginx
+Group=nginx
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 6.3. Servicio de PHP-FPM (`/etc/systemd/system/php-fpm8.4.service`)
+
+```ini
+[Unit]
+Description=The PHP 8.4 FastCGI Process Manager
+After=network.target
+
+[Service]
+Type=simple
+PIDFile=/srv/nginx/var/run/php-fpm.pid
+
+ExecStart=/srv/nginx/sbin/php-fpm --nodaemonize --fpm-config /srv/nginx/etc/php-fpm.conf
+
+ExecReload=/bin/kill -USR2 $MAINPID
+
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### 6.4. Activación de Servicios
+
+```bash
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now nginx-init.service
+
+sudo systemctl enable --now nginx.service
+
+sudo systemctl enable --now php-fpm8.4.service
+```
+
+# Conclusiones
+
+- La compilación desde el código fuente en sistemas de nivel empresarial como AlmaLinux proporciona un entorno optimizado y minimiza la superficie de ataque al incluir únicamente los módulos estrictamente necesarios para la operación del negocio.
+- El uso de Sockets UNIX en lugar de Sockets TCP (`127.0.0.1:9000`) reduce el overhead de la pila de red local, eliminando la necesidad de manejar cabeceras de red internas y acelerando drásticamente el procesamiento de peticiones FastCGI entre NGINX y PHP-FPM.
+- El aislamiento por usuarios (`nginx` y `php`) garantiza que, en caso de que una vulnerabilidad comprometa el intérprete de PHP, el atacante no obtenga control automático sobre el binario o las configuraciones críticas del servidor web NGINX.
+
+# Bibliografía
+
+- International Components for Unicode. (2025). ICU User Guide.  
+  https://icu.unicode.org/
+
+- NGINX Documentation. (2026). NGINX Core functionality.  
+  https://nginx.org/en/docs/
+
+- PHP Documentation Group. (2026). FastCGI Process Manager (FPM).  
+  https://www.php.net/manual/en/install.fpm.php
+
+- The SystemD Consortium. (2025). systemd.service — Service unit configuration.  
+  https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
+
