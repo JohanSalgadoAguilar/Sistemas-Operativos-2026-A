@@ -4,7 +4,8 @@
 # Servidor NGINX/PHP
 
 **Tecnológico de Estudios Superiores del Oriente de México**  
-**INTEGRANTES:** Hernandez Sanchez Christopher Oswaldo  
+**INTEGRANTES:**
+Hernandez Sanchez Christopher Oswaldo  
 Salgado Aguilar Johan Raciel  
 Gonzalez Blanco Brian Ruben  
 
